@@ -3,7 +3,7 @@
 This repository contains the matlab code to solve the time-domain nonlinear model describing nonlinear effects arising in silicon microring modulators.
 
 A detailed description of the model and analysis results are described in the following publication:
-Marc de Cea, Amir H. Atabaki, and Rajeev J. Ram, "Power handling of silicon microring modulators," Opt. Express 27, 24274-24285 (2019) Marc de Cea, Amir H. Atabaki, and Rajeev J. Ram, "Power handling of silicon microring modulators," Opt. Express 27, 24274-24285 (2019)
+Marc de Cea, Amir H. Atabaki, and Rajeev J. Ram, "Power handling of silicon microring modulators," Opt. Express 27, 24274-24285 (2019).
 
 Each function and script is thoroughly commented, so it should be easy to understand the different pieces of the implementation.
 
