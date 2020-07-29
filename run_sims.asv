@@ -1,0 +1,181 @@
+% --------------- Non-linearities in a microring resonator --------------
+
+% The script implements and solves a system of differential equations that
+% models the dynamics of a microring resonator under high power conditions,
+% in which case nonlinearities such as two photon absorption become
+% important.
+
+% In this script, only parallelization for input power is implemented. In
+% the script run_sims_tot_par, we parallelize both power and wavelength.
+
+clear all
+close all
+
+warning off
+
+%% ********************* 1. Operational conditions ************************
+
+T0 = 300;  % Operating temperature
+
+L = 7; % Length of the PRBS signal (2^L-1)
+n = 20; % Number of times the PRBS signal is applied 8
+Vbias = -2.5; % Reverse bias voltage (V) -2.5
+Vp = 2; % Peak amplitude of the applied driving signal (V)
+f = 1e9; % Data rate of the signal (bps)
+
+sim_name = 'trial';  %Name that the .mat files containing sim data will have
+
+% The parameters for the ring should be specified in the script
+% get_ring_params
+
+% Sweep over input power and wavelength
+
+Pin_v = 1e-3; % Input power (W)
+% lamL_v = linspace(1550.1, 1550.5, 5)*1e-9; % Laser wavelengths (m)
+lamL_v =1550.6*1e-9;
+
+ 
+%% ******* 2. Generate PRBS driving signal from specified parameters ******
+
+% Calculate the end_time for each operational point
+% from the above parameters
+end_t = (2^L-1)*n/f;
+samples_per_bit = 20;
+nsamples = (2^L-1)*samples_per_bit; % Total number of samples per prbs trace
+sample_t = linspace(0, end_t, nsamples*n); % Sampling times
+
+% Generate the driving signal
+% Vapp = (Vbias + Vp*idinput([nsamples, 1, n], 'prbs', [0, (2^L-1)/(nsamples)], [-1, 1]));
+Vapp = (Vbias + Vp*LUT_PRBS(L, samples_per_bit, n));
+
+
+%% ***** 3. Perform the simulations for each operational condition ******
+
+ER = zeros(length(Pin_v), length(lamL_v));
+IL = zeros(length(Pin_v), length(lamL_v));
+mu_0 = zeros(length(Pin_v), length(lamL_v));
+mu_1 = zeros(length(Pin_v), length(lamL_v));
+
+c = 2.997e8;
+
+% We can definitely do each power in parallel
+parfor j = 1:length(Pin_v)
+    
+    Pin = Pin_v(j);
+    lamL = lamL_v(1);
+    Wl = 2*pi*c/lamL;
+    
+    % *******************************
+    % Get the initial state as if we have swept the laser wavelength
+    lamL_sweep = linspace(lamL-1e-9, lamL, 100);
+    Wl_sweep = 2*pi*c./lamL_sweep;
+    
+    init_guess = [NaN, NaN];
+    
+    for k = 1:length(Wl_sweep)
+        [y0, ~, success] = get_steady_state(Wl_sweep(k), Pin, T0, Vbias, init_guess);
+        init_guess = [y0(1), y0(2)];       
+    end
+       
+    % ************************************
+    
+    % Solve the ODEs for each operational point
+    ER_v = zeros(1, length(lamL_v));
+    IL_v = zeros(1, length(lamL_v));
+    mu_0_v = zeros(1, length(lamL_v));
+    mu_1_v = zeros(1, length(lamL_v));
+    
+    for i = 1:length(lamL_v)
+        
+        Wl = 2*pi*c/lamL_v(i);
+        [t, y] = run_single_sim(Wl, Vbias, T0, Pin, y0, sample_t, Vapp, 4*n);
+        
+        % The beginning of the next wavelength is the last state of the
+        % simulation we just did
+        y0 = y(end,:);
+        
+        % Save the relevant results
+        
+        [gamma_0, ~, ~, kappa, ... % loss params
+        ~, ~, ~, ~, ~, ~, ... % Optical mode volumes and confinements
+        ~, ~, ~, ~, ... % Thermal related stuff, instantaneous value at T+deltaT
+        ~, ~, ~, ... % Thermal related stuff, equivalent value (see comments in code)
+        ~, ~, ~, ~, ~, ... % Carrier related stuff
+        ~, ~, ~, ... % Silicon related parameters
+        ~,~, ~, ... % Ring related stuff
+        ~, ~] ...  % Electro-optic driving related stuff
+        = ring_params(Wl, T0, 0, 0, 0)    
+        
+        Pout = abs(sqrt(Pin) - 1i*conj(kappa).*(y(:,1)+1i*y(:,2))).^2;
+        parsave(strcat('data/', sim_name, 'Pout_for_Pin=', num2str(Pin), '_lam=', num2str(lamL_v(i)*1e9), '.mat'), Pout);
+        parsave(strcat('data/', sim_name, 'y_for_Pin=', num2str(Pin), '_lam=', num2str(lamL_v(i)*1e9), '.mat'), y);
+        
+        [ER_s, IL_s, mu_0_s, mu_1_s] = analyze_traces(Pout, Pin, y(:, 5), Vbias, Vp);
+        
+        ER_v(i) = ER_s;
+        IL_v(j) = IL_s
+        mu_0_v(j) = mu_0_s;
+        mu_1_v(j) = mu_1_s;
+        
+    end
+    
+    ER(j,:) = ER_v;
+    IL(j,:) = IL_v;
+    mu_0(j,:) = mu_0_v;
+    mu_1(j,:) = mu_1_v;
+      
+end
+
+
+
+%% ****** Helper functions **********
+
+function parsave(fname, x)
+
+  save(fname, 'x')
+  
+end
+
+
+function [ER, IL, mu_0, mu_1] = analyze_traces(Pout, Pin, Vpn, Vbias, Vp)
+                   
+   valV1 = Pout(Vpn > (Vbias + Vp - 0.001));
+   valV0 = Pout(Vpn < (Vbias - Vp + 0.001));
+   
+   % Get relevant values by taking histograms
+   
+   % '1' value
+   figure()
+   h = histogram(valV1, 100, 'Normalization', 'probability');
+   title(['1 value, Pin = ', num2str(Pin), ' mW'])
+   bins = h.BinEdges;
+   bins = (bins(2:end)+bins(1:end-1))/2;
+   counts = h.Values;
+   [~, ind_1] = max(counts);
+   mu_1 = bins(ind_1);
+   
+   % '0' value
+   hold on
+   h = histogram(valV0, 100, 'Normalization', 'probability');
+   title(['0 value, Pin = ', num2str(Pin)*1e3, ' mW'])
+   bins = h.BinEdges;
+   bins = (bins(2:end)+bins(1:end-1))/2;
+   counts = h.Values;
+   [~, ind_0] = max(counts);
+   mu_0 = bins(ind_0);
+   
+   if mu_1 < mu_0
+       
+      mu_int = mu_0;
+      mu_0 = mu_1;
+      mu_1 = mu_int;
+      
+   end
+
+   ER = mu_1/mu_0;
+   IL = Pin/mu_1;
+
+ end
+
+
+
