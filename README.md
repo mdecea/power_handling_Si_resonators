@@ -1,6 +1,4 @@
-# power_handling_Si_resonators
-
-Power handlind of Si microring resonators
+# Power handling of Si microring resonators
 
 This repository contains the matlab code to solve the time-domain nonlinear model describing nonlinear effects arising in silicon microring modulators.
 
