@@ -1,0 +1,1 @@
+This folder is, by default, the folder where all the simulation data is saved.

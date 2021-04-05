@@ -56,7 +56,7 @@ V_TPA = 10.62978e-18; % m^3
 Vring = 0; % Ring volume (m^3) (not specified becasue of Non Disclosure)
 
 if Vring == 0
-    fprintf('You need to specify the ring volume. Not included because of NDA')
+    fprintf('You need to specify the ring volume. Not included because of NDA. \n')
 end
 
 rho_Si = 2.33e6; % Density of Si (g/m^3).
